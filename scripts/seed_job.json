@@ -1,0 +1,16 @@
+{
+  "type": "hpo",
+  "payload": {
+    "objective": "demo",
+    "searchSpace": {
+      "lr": [0.0001, 1.0],
+      "momentum": [0.0, 1.0],
+      "weightDecay": [0.0, 0.1]
+    },
+    "data": []
+  },
+  "shardSize": 10,
+  "maxWorkers": 4,
+  "status": "pending",
+  "strategyId": "gen-0"
+}

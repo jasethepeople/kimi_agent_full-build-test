@@ -1,0 +1,117 @@
+name: hpo-grid
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: hpo-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+    networks:
+      - grid
+    restart: unless-stopped
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: hpo-nats
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "${NATS_PORT:-4222}:4222"
+      - "${NATS_MONITOR_PORT:-8222}:8222"
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8222/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - grid
+    restart: unless-stopped
+
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: hpo-orchestrator
+    image: hpo-grid/orchestrator:latest
+    env_file:
+      - .env
+    environment:
+      REDIS_ADDR: redis:6379
+      REDIS_URL: redis://redis:6379
+      NATS_URL: nats://nats:4222
+      API_ADDR: :8080
+    ports:
+      - "8080:8080"
+    volumes:
+      # Read-only Docker socket so the provisioner can start worker containers.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - grid
+    restart: unless-stopped
+
+  strategy-engine:
+    build:
+      context: ./strategy-engine
+      dockerfile: Dockerfile
+    container_name: hpo-strategy-engine
+    image: hpo-grid/strategy-engine:latest
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      NATS_URL: nats://nats:4222
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - grid
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    image: hpo-grid/worker:latest
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      NATS_URL: nats://nats:4222
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - grid
+    restart: unless-stopped
+    # Scale the static pool with:
+    #   docker compose up -d --scale worker=4
+    # The orchestrator may also provision additional workers itself via the
+    # Docker socket (see SPEC 6.1); this service provides a baseline pool.
+
+volumes:
+  redis-data:
+  nats-data:
+
+networks:
+  grid:
+    name: grid

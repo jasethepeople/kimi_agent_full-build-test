@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+strategy-engine/.cpcache/
+.env
+*.pem
+*.key
+client_secret*
+node_modules/
